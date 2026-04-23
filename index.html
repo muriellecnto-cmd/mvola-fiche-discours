@@ -138,9 +138,9 @@ tr:nth-child(even) td{background:rgba(255,255,255,.02)}
 .modal-lg{width:860px}
 
 /* FICHE CARD */
-.fiche-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--r);margin-bottom:8px;overflow:hidden;cursor:pointer;transition:border-color .2s}
-.fiche-card:hover{border-color:rgba(255,208,0,.3)}
-.fiche-card.open{border-color:rgba(255,208,0,.4);box-shadow:0 0 0 1px rgba(255,208,0,.08)}
+.fiche-card{background:var(--surface);border:1px solid rgba(255,255,255,.1);border-radius:var(--r);margin-bottom:6px;overflow:hidden;cursor:pointer;transition:border-color .2s}
+.fiche-card:hover{border-color:rgba(255,208,0,.5)}
+.fiche-card.open{border-color:var(--accent);box-shadow:0 0 0 0 transparent}
 .fiche-h{display:flex;align-items:center;justify-content:space-between;padding:13px 18px;gap:12px;user-select:none}
 .fiche-left{flex:1;min-width:0;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .fiche-title{font-size:13px;font-weight:600;color:var(--text)}
@@ -1268,7 +1268,7 @@ async function doLogin(){
 
 function normalFiche(f){
   return{
-    id:f.id||0,cat:f.cat||f['categorie']||f['catégorie']||'',
+    id:String(f.id||0),cat:f.cat||f['categorie']||f['catégorie']||'',
     title:f.title||f['titre']||'',ussd:f.ussd||'',
     fr:f.fr||f['discours_fr']||f['discours fr']||'',
     mg:f.mg||f['discours_mg']||f['discours mg']||'',
@@ -1560,7 +1560,8 @@ function renderSections(secs){
 //  FICHE CARD
 // ═══════════════════════════════════════════════════
 function ficheCardHTML(d){
-  var isOpen=_openFiche===d.id,lg=_langPref[d.id]||'fr',hasDisc=d.fr||d.mg,body='';
+  var sid=String(d.id);
+  var isOpen=(_openFiche===sid),lg=_langPref[sid]||'fr',hasDisc=d.fr||d.mg,body='';
   if(isOpen){
     body='<div class="fiche-body">';
     if(hasDisc){
@@ -1574,7 +1575,7 @@ function ficheCardHTML(d){
     if(d.hist) body+='<div class="hist-row"><span class="hist-ico">📋</span><span class="hist-txt"><strong>Historisation S3 :</strong> '+esc(d.hist)+'</span></div>';
     body+='</div>';
   }
-  return'<div class="fiche-card'+(isOpen?' open':'')+'" data-id="'+d.id+'">'
+  return'<div class="fiche-card'+(isOpen?' open':'')+'" data-id="'+d.id+'" data-fiche="'+encodeURIComponent(JSON.stringify(d))+'">'
     +'<div class="fiche-h" onclick="toggleFiche('+d.id+')">'
     +'<div class="fiche-left"><span class="badge b-cat">'+esc(d.cat)+'</span>'
     +(d.ussd?'<span class="badge b-ussd">'+esc(d.ussd)+'</span>':'')
@@ -1582,16 +1583,25 @@ function ficheCardHTML(d){
     +'<span class="fiche-arr">&#9654;</span></div>'+body+'</div>';
 }
 function toggleFiche(id){
-  _openFiche=(_openFiche===id)?null:id;
+  id=String(id);
+  var wasOpen=(_openFiche===id);
+  _openFiche=wasOpen?null:id;
   if(_openFiche&&!_langPref[id]) _langPref[id]='fr';
   var el=document.querySelector('.fiche-card[data-id="'+id+'"]');
-  var d=DB.fiches.find(function(f){return f.id===id;});
+  var d=DB.fiches.find(function(f){return String(f.id)===id;});
+  if(!d&&el&&el.dataset.fiche){
+    try{d=JSON.parse(decodeURIComponent(el.dataset.fiche));}catch(ex){}
+  }
   if(el&&d){var tmp=document.createElement('div');tmp.innerHTML=ficheCardHTML(d);el.replaceWith(tmp.firstChild);}
+  else if(el&&!d){el.classList.toggle('open',!wasOpen);}
 }
 function setLang(e,id,lg){
-  e.stopPropagation();_langPref[id]=lg;
+  e.stopPropagation();
+  id=String(id);
+  _langPref[id]=lg;
   var el=document.querySelector('.fiche-card[data-id="'+id+'"]');
-  var d=DB.fiches.find(function(f){return f.id===id;});
+  var d=DB.fiches.find(function(f){return String(f.id)===id;});
+  if(!d&&el&&el.dataset.fiche){try{d=JSON.parse(decodeURIComponent(el.dataset.fiche));}catch(ex){}}
   if(el&&d){var tmp=document.createElement('div');tmp.innerHTML=ficheCardHTML(d);el.replaceWith(tmp.firstChild);}
 }
 
@@ -2226,7 +2236,9 @@ function openNewFiche(){
   renderFicheEditorBody();openModal('modal-fiche-editor');
 }
 function openEditFiche(id){
-  var d=DB.fiches.find(function(f){return f.id===id;});if(!d) return;
+  id=String(id);
+  var d=DB.fiches.find(function(f){return String(f.id)===id;});
+  if(!d){toast('Fiche introuvable (id='+id+')','err');return;}
   _editFicheId=id;_editFicheData=JSON.parse(JSON.stringify(d));
   ge('mfe-title').textContent='Modifier la fiche';ge('mfe-sub').textContent=d.title;
   renderFicheEditorBody();openModal('modal-fiche-editor');
@@ -2359,8 +2371,8 @@ async function saveFiche(){
   try{
     var res=await api({action:'saveFiche',fiche:d,isNew:_editFicheId===null,who:CU?CU.login:''});
     if(!res||!res.ok){toast((res&&res.msg)||"Erreur lors de l'enregistrement",'err');return;}
-    if(_editFicheId===null){DB.fiches.push(Object.assign({},d,{id:res.id}));toast('Fiche créée !','ok');}
-    else{var idx=DB.fiches.findIndex(function(f){return f.id===_editFicheId;});if(idx>=0) DB.fiches[idx]=Object.assign({},d,{id:_editFicheId});toast('Fiche mise à jour !','ok');}
+    if(_editFicheId===null){DB.fiches.push(Object.assign({},d,{id:String(res.id)}));toast('Fiche créée !','ok');}
+    else{var idx=DB.fiches.findIndex(function(f){return String(f.id)===String(_editFicheId);});if(idx>=0) DB.fiches[idx]=Object.assign({},d,{id:_editFicheId});toast('Fiche mise à jour !','ok');}
     clearSessionCache();
     closeModal('modal-fiche-editor');renderAdminFiches();updateNavCounts();
   }catch(e){toast('Erreur : '+e.message,'err');}
